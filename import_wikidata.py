@@ -16,7 +16,7 @@ DATE_PARSE_RE = re.compile(r'([-+]?[0-9]+)-([0-9][0-9])-([0-9][0-9])T([0-9][0-9]
 def setup_db(connection_string):
   conn = psycopg2.connect(connection_string)
   cursor = conn.cursor()
-  cursor.execute('CREATE SCHEMA wd;')
+  cursor.execute('CREATE SCHEMA IF NOT EXISTS wd;')
   cursor.execute('DROP TABLE IF EXISTS wd.wikidata')
   cursor.execute('CREATE TABLE wd.wikidata ('
                  '    wikipedia_id TEXT PRIMARY KEY,'
@@ -236,6 +236,6 @@ if __name__ == '__main__':
                  'SELECT wikidata_id, jsonb_build_array(lower(properties->>\'instance of\')) '
                  'FROM wd.wikidata WHERE jsonb_typeof(properties->\'instance of\') = \'string\';'
                 )
-  cursor.execute('CREATE INDEX wd_wikidata_instance ON wd.instance USING gin (instance_of) TABLESPACE pg_default;')
+  cursor.execute('CREATE INDEX wd_wikidata_instance ON wd.instance USING gist (instance_of COLLATE pg_catalog."default" gist_trgm_ops) TABLESPACE pg_default;')
 
   conn.commit()
