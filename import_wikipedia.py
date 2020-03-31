@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/bin/python3
 
 import argparse
 import subprocess
@@ -16,8 +16,10 @@ RE_GENERAL = re.compile('(.+?)(\ (in|of|by)\ )(.+)')
 def setup_db(connection_string):
   conn = psycopg2.connect(connection_string)
   cursor = conn.cursor()
-  cursor.execute('DROP TABLE IF EXISTS wikipedia')
-  cursor.execute('CREATE TABLE wikipedia ('
+  cursor.execute('CREATE SCHEMA IF NOT EXISTS wp;')
+  cursor.execute('DROP TABLE IF EXISTS wp.wikipedia')
+  cursor.execute('CREATE TABLE wp.wikipedia ('
+                 '    id integer,'
                  '    title TEXT PRIMARY KEY,'
                  '    infobox TEXT,'
                  '    wikitext TEXT,'
@@ -25,10 +27,6 @@ def setup_db(connection_string):
                  '    categories TEXT[] NOT NULL DEFAULT \'{}\','
                  '    general TEXT[] NOT NULL DEFAULT \'{}\''
                  ')')
-  cursor.execute('CREATE INDEX wikipedia_infobox ON wikipedia(infobox)')
-  cursor.execute('CREATE INDEX wikipedia_templates ON wikipedia USING gin(templates)')
-  cursor.execute('CREATE INDEX wikipedia_categories ON wikipedia USING gin(categories)')
-  cursor.execute('CREATE INDEX wikipedia_general ON wikipedia USING gin(general)')
 
   return conn, cursor
 
@@ -61,12 +59,12 @@ class WikiXmlHandler(xml.sax.handler.ContentHandler):
     self._values = {}
 
   def startElement(self, name, attrs):
-    if name in ('title', 'text'):
+    if name in ('title', 'text', 'id'):
       self._state = name
 
   def endElement(self, name):
     if name == self._state:
-      self._values[name] = ''.join(self._buffer)
+      if name not in self._values: self._values[name] = ''.join(self._buffer)
       self._state = None
       self._buffer = []
 
@@ -80,18 +78,19 @@ class WikiXmlHandler(xml.sax.handler.ContentHandler):
             infobox = template[len(INFOBOX_PREFIX):]
             break
         if len(infobox or '') > 1024 or len(self._values['title']) > 1024:
-          print 'Too long'
+          print('Too long')
           raise mwparserfromhell.parser.ParserError('too long')
         categories = make_tags(l.title[len(CAT_PREFIX):] for l in wikicode.filter_wikilinks() if l.title.startswith(CAT_PREFIX))
         general = make_tags(extact_general(x) for x in categories)
         # even though we shouldn't get dupes, sometimes wikidumps are faulty:
-        self._db_cursor.execute('INSERT INTO wikipedia (title, infobox, wikitext, templates, categories, general) VALUES (%s, %s, %s, %s, %s, %s)  ON CONFLICT DO NOTHING',
-                                (self._values['title'], infobox, self._values['text'], templates, categories, general))
+        # print(self._values['title'], self._values['id'], infobox, templates, categories, general);
+        self._db_cursor.execute('INSERT INTO wp.wikipedia (id, title, infobox, wikitext, templates, categories, general) VALUES (%s, %s, %s, %s, %s, %s, %s)  ON CONFLICT DO NOTHING',
+                                (self._values['id'], self._values['title'], infobox, self._values['text'], templates, categories, general))
         self._count += 1
         if self._count % 100000 == 0:
-          print self._count
+          print(self._count)
       except mwparserfromhell.parser.ParserError:
-        print 'mwparser error for:', self._values['title']
+        print('mwparser error for:', self._values['title'])
       self.reset()
 
   def characters(self, content):
@@ -102,7 +101,7 @@ class WikiXmlHandler(xml.sax.handler.ContentHandler):
 def main(dump, cursor):
   parser = xml.sax.make_parser()
   parser.setContentHandler(WikiXmlHandler(cursor))
-  for line in subprocess.Popen(['bzcat'], stdin=file(dump), stdout=subprocess.PIPE).stdout:
+  for line in subprocess.Popen(['bzcat'], stdin=open(dump, 'r'), stdout=subprocess.PIPE).stdout:
     try:
       parser.feed(line)
     except StopIteration:
@@ -111,7 +110,7 @@ def main(dump, cursor):
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='Import wikipedia into postgress')
-  parser.add_argument('--postgres', type=str,
+  parser.add_argument('postgres', type=str,
                       help='postgres connection string')
   parser.add_argument('dump', type=str,
                       help='BZipped wikipedia dump')
@@ -120,6 +119,10 @@ if __name__ == '__main__':
   conn, cursor = setup_db(args.postgres)
 
   main(args.dump, cursor)
+  cursor.execute('CREATE INDEX wp_wikipedia_infobox ON wp.wikipedia(infobox)')
+  cursor.execute('CREATE INDEX wp_wikipedia_templates ON wp.wikipedia USING gin(templates)')
+  cursor.execute('CREATE INDEX wp_wikipedia_categories ON wp.wikipedia USING gin(categories)')
+  cursor.execute('CREATE INDEX wp_wikipedia_general ON wp.wikipedia USING gin(general)')
 
   conn.commit()
 
