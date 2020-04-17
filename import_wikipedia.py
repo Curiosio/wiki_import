@@ -7,6 +7,7 @@ import xml.sax
 import mwparserfromhell
 import psycopg2
 import re
+from progressbar import ProgressBar, Bar, SimpleProgress, Percentage, RotatingMarker, AdaptiveETA
 
 CAT_PREFIX = 'Category:'
 INFOBOX_PREFIX = 'infobox '
@@ -47,11 +48,22 @@ def extact_general(category):
 
 
 class WikiXmlHandler(xml.sax.handler.ContentHandler):
-  def __init__(self, cursor):
+  def __init__(self, cursor, conn):
     xml.sax.handler.ContentHandler.__init__(self)
     self._db_cursor = cursor
+    self._db_conn = conn
     self._count = 0
+    self._pbar = ProgressBar(maxval=12120000, widgets=[Percentage(), Bar(marker=RotatingMarker()),SimpleProgress(), AdaptiveETA()])
     self.reset()
+
+
+  def pstart(self):
+      self._pbar.start()
+
+
+  def pstop(self):
+      self._pbar.finish()
+
 
   def reset(self):
     self._buffer = []
@@ -71,9 +83,10 @@ class WikiXmlHandler(xml.sax.handler.ContentHandler):
     if name == 'page':
       try:
         wikicode = mwparserfromhell.parse(self._values['text'])
-        templates = make_tags(strip_template_name(template.name) for template in wikicode.filter_templates())
+        templates = wikicode.filter_templates()
+        template_names = make_tags(strip_template_name(template.name) for template in templates)
         infobox = None
-        for template in templates:
+        for template in template_names:
           if template.startswith(INFOBOX_PREFIX):
             infobox = template[len(INFOBOX_PREFIX):]
             break
@@ -83,12 +96,14 @@ class WikiXmlHandler(xml.sax.handler.ContentHandler):
         categories = make_tags(l.title[len(CAT_PREFIX):] for l in wikicode.filter_wikilinks() if l.title.startswith(CAT_PREFIX))
         general = make_tags(extact_general(x) for x in categories)
         # even though we shouldn't get dupes, sometimes wikidumps are faulty:
-        # print(self._values['title'], self._values['id'], infobox, templates, categories, general);
+        # print(self._values['title'], self._values['id'], infobox, templates, categories, general)
         self._db_cursor.execute('INSERT INTO wp.wikipedia (id, title, infobox, wikitext, templates, categories, general) VALUES (%s, %s, %s, %s, %s, %s, %s)  ON CONFLICT DO NOTHING',
-                                (self._values['id'], self._values['title'], infobox, self._values['text'], templates, categories, general))
+                                (self._values['id'], self._values['title'], infobox, self._values['text'], make_tags(templates), categories, general))
+        self._pbar.update(self._count)
         self._count += 1
         if self._count % 100000 == 0:
-          print(self._count)
+          # print(self._count)
+          self._db_conn.commit()
       except mwparserfromhell.parser.ParserError:
         print('mwparser error for:', self._values['title'])
       self.reset()
@@ -98,14 +113,19 @@ class WikiXmlHandler(xml.sax.handler.ContentHandler):
       self._buffer.append(content)
 
 
-def main(dump, cursor):
+def main(dump, cursor, conn):
   parser = xml.sax.make_parser()
-  parser.setContentHandler(WikiXmlHandler(cursor))
+  xmlHandler = WikiXmlHandler(cursor, conn)
+  parser.setContentHandler(xmlHandler)
+
+  xmlHandler.pstart()
   for line in subprocess.Popen(['bzcat'], stdin=open(dump, 'r'), stdout=subprocess.PIPE).stdout:
     try:
       parser.feed(line)
     except StopIteration:
       break
+
+  xmlHandler.pstop()
 
 
 if __name__ == '__main__':
@@ -116,9 +136,13 @@ if __name__ == '__main__':
                       help='BZipped wikipedia dump')
 
   args = parser.parse_args()
+  print('Setup db')
   conn, cursor = setup_db(args.postgres)
 
-  main(args.dump, cursor)
+  print('Parsing...')
+  main(args.dump, cursor, conn)
+  print('Create indexes')
+  conn.commit()
   cursor.execute('CREATE INDEX wp_wikipedia_infobox ON wp.wikipedia(infobox)')
   cursor.execute('CREATE INDEX wp_wikipedia_templates ON wp.wikipedia USING gin(templates)')
   cursor.execute('CREATE INDEX wp_wikipedia_categories ON wp.wikipedia USING gin(categories)')
