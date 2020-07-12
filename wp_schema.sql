@@ -2,9 +2,9 @@
 --
 -- Table structure for table "redirect"
 --
-CREATE SCHEMA IF NOT EXISTS wp;
-DROP TABLE IF EXISTS wp.redirect;
-CREATE TABLE wp.redirect (
+CREATE SCHEMA IF NOT EXISTS import;
+DROP TABLE IF EXISTS import.redirect;
+CREATE TABLE import.redirect (
   "rd_from" integer NOT NULL DEFAULT '0',
   "rd_namespace" integer NOT NULL DEFAULT '0',
   "rd_title" text NOT NULL DEFAULT '',
@@ -13,8 +13,8 @@ CREATE TABLE wp.redirect (
  );
 
 
-DROP TABLE IF EXISTS wp.page;
-CREATE TABLE wp.page (
+DROP TABLE IF EXISTS import.page;
+CREATE TABLE import.page (
   "page_id" integer NOT NULL ,
   "page_namespace" integer NOT NULL DEFAULT '0',
   "page_title" TEXT NOT NULL DEFAULT '',
@@ -31,8 +31,8 @@ CREATE TABLE wp.page (
 );
 
 
-DROP TABLE IF EXISTS wp.geo_tags;
-CREATE TABLE wp.geo_tags (
+DROP TABLE IF EXISTS import.geo_tags;
+CREATE TABLE import.geo_tags (
   "gt_id" integer NOT NULL,
   "gt_page_id" integer NOT NULL,
   "gt_globe" TEXT NOT NULL,
@@ -46,15 +46,16 @@ CREATE TABLE wp.geo_tags (
   "gt_region" TEXT DEFAULT NULL
 );
 
-CREATE TABLE wp.pagelinks (
+DROP TABLE IF EXISTS import.pagelinks;
+CREATE TABLE import.pagelinks (
   "pl_from" integer,
   "pl_namespace" integer,
   "pl_title" TEXT,
   "pl_from_namespace" integer
 );
 
-DROP TABLE IF EXISTS wp.page_props;
-CREATE TABLE "wp.page_props" (
+DROP TABLE IF EXISTS import.page_props;
+CREATE TABLE "import.page_props" (
       "pp_page" integer,
       "pp_propname" TEXT,
       "pp_value" TEXT,

@@ -7,7 +7,7 @@ import xml.sax
 import mwparserfromhell
 import psycopg2
 import re
-from progressbar import ProgressBar, Bar, SimpleProgress, Percentage, RotatingMarker, AdaptiveETA
+from progressbar import ProgressBar, Bar, SimpleProgress, Percentage, RotatingMarker, AdaptiveETA, UnknownLength
 
 CAT_PREFIX = 'Category:'
 INFOBOX_PREFIX = 'infobox '
@@ -17,9 +17,9 @@ RE_GENERAL = re.compile('(.+?)(\ (in|of|by)\ )(.+)')
 def setup_db(connection_string):
   conn = psycopg2.connect(connection_string)
   cursor = conn.cursor()
-  cursor.execute('CREATE SCHEMA IF NOT EXISTS wp;')
-  cursor.execute('DROP TABLE IF EXISTS wp.wikipedia')
-  cursor.execute('CREATE TABLE wp.wikipedia ('
+  cursor.execute('CREATE SCHEMA IF NOT EXISTS import;')
+  cursor.execute('DROP TABLE IF EXISTS import.wikipedia')
+  cursor.execute('CREATE TABLE import.wikipedia ('
                  '    id integer,'
                  '    title TEXT PRIMARY KEY,'
                  '    infobox TEXT,'
@@ -53,7 +53,7 @@ class WikiXmlHandler(xml.sax.handler.ContentHandler):
     self._db_cursor = cursor
     self._db_conn = conn
     self._count = 0
-    self._pbar = ProgressBar(maxval=12120000, widgets=[Percentage(), Bar(marker=RotatingMarker()),SimpleProgress(), AdaptiveETA()])
+    self._pbar = ProgressBar(widgets=[Bar(),SimpleProgress(), AdaptiveETA()], maxval=UnknownLength)
     self.reset()
 
 
@@ -97,7 +97,7 @@ class WikiXmlHandler(xml.sax.handler.ContentHandler):
         general = make_tags(extact_general(x) for x in categories)
         # even though we shouldn't get dupes, sometimes wikidumps are faulty:
         # print(self._values['title'], self._values['id'], infobox, templates, categories, general)
-        self._db_cursor.execute('INSERT INTO wp.wikipedia (id, title, infobox, wikitext, templates, categories, general) VALUES (%s, %s, %s, %s, %s, %s, %s)  ON CONFLICT DO NOTHING',
+        self._db_cursor.execute('INSERT INTO import.wikipedia (id, title, infobox, wikitext, templates, categories, general) VALUES (%s, %s, %s, %s, %s, %s, %s)  ON CONFLICT DO NOTHING',
                                 (self._values['id'], self._values['title'], infobox, self._values['text'], make_tags(templates), categories, general))
         self._pbar.update(self._count)
         self._count += 1
@@ -143,10 +143,10 @@ if __name__ == '__main__':
   main(args.dump, cursor, conn)
   print('Create indexes')
   conn.commit()
-  cursor.execute('CREATE INDEX wp_wikipedia_infobox ON wp.wikipedia(infobox)')
-  cursor.execute('CREATE INDEX wp_wikipedia_templates ON wp.wikipedia USING gin(templates)')
-  cursor.execute('CREATE INDEX wp_wikipedia_categories ON wp.wikipedia USING gin(categories)')
-  cursor.execute('CREATE INDEX wp_wikipedia_general ON wp.wikipedia USING gin(general)')
+  cursor.execute('CREATE INDEX wp_wikipedia_infobox ON import.wikipedia(infobox)')
+  cursor.execute('CREATE INDEX wp_wikipedia_templates ON import.wikipedia USING gin(templates)')
+  cursor.execute('CREATE INDEX wp_wikipedia_categories ON import.wikipedia USING gin(categories)')
+  cursor.execute('CREATE INDEX wp_wikipedia_general ON import.wikipedia USING gin(general)')
 
   conn.commit()
 
