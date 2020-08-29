@@ -7,6 +7,7 @@ import xml.sax
 from collections import defaultdict
 import mwparserfromhell
 import psycopg2
+from psycopg2 import extras
 import re
 import json
 import os
@@ -67,11 +68,11 @@ def parse_props(d, id_name_map):
   wikidata_id = d.get('id')
   labels = None
   title = None
-  if type(d.get('labels', {})) == dict and d.get('labels'):
+  try:
     labels = [d['labels'][x]['value'] for x in d.get('labels', {})]
     title = d['labels'].get('en', {}).get('value')
-  else:
-    return None, None, None, None, None, None
+  except:
+    pass
 
   sitelinks = None
   wikipedia_id = None
@@ -79,7 +80,7 @@ def parse_props(d, id_name_map):
     sitelinks = [d.get('sitelinks')[x]['title'] for x in d.get('sitelinks', {})]
     wikipedia_id = d.get('sitelinks', {}).get('enwiki', {}).get('title')
   except:
-    pass
+    return None, None, None, None, None, None
 
   description = None
   try:
@@ -130,29 +131,32 @@ def parse_props(d, id_name_map):
 
 
 def update_DB(wikipedia_id, title, wikidata_id, labels, sitelinks, description, properties, conn, cursor):
-  cursor.execute('INSERT INTO wd.wikidata (wikipedia_id, title, wikidata_id, labels, sitelinks, description, properties) VALUES (%s, %s, %s, %s, %s, %s, %s)',
+  cursor.execute('INSERT INTO import.wikidata (wikipedia_id, title, wikidata_id, labels, sitelinks, description, properties)'
+                 'VALUES (%s, %s, %s, %s, %s, %s, %s)'
+                 'ON CONFLICT (wikidata_id) DO UPDATE SET title = EXCLUDED.title, labels = EXCLUDED.labels, sitelinks = EXCLUDED.sitelinks,'
+                 'description = EXCLUDED.description, properties = EXCLUDED.properties'
+                 ,
     (wikipedia_id, title, wikidata_id, extras.Json(labels), extras.Json(sitelinks), description, extras.Json(properties)))
 
   cursor.execute('INSERT into import.geo (wikidata_id, geometry) '
                 'SELECT wikidata_id, ST_SETSRID(ST_MAKEPOINT((properties->\'coordinate location\'->>\'lng\')::DECIMAL, '
                 '(properties->\'coordinate location\'->>\'lat\')::DECIMAL), 4326) AS geometry '
                 'FROM import.wikidata WHERE properties->\'coordinate location\' IS NOT NULL AND wikidata_id = %s',
-                'ON CONFLICT DO UPDATE SET geometry = ST_SETSRID(ST_MAKEPOINT((EXCLUDED.properties->\'coordinate location\'->>\'lng\')::DECIMAL, '
-                '(EXCLUDED.properties->\'coordinate location\'->>\'lat\')::DECIMAL), 4326);'
+                'ON CONFLICT (wikidata_id) DO UPDATE SET geometry = EXCLUDED.geometry;',
                 (wikidata_id, ))
-  cursor.execute('INSERT INTO import.labels (wikidata_id, label) SELECT wikidata_id, jsonb_array_elements_text(labels) '
-                 'FROM import.wikidata WHERE wikidata_id = %s ON CONFLICT DO NOTHING;',
+  cursor.execute('INSERT INTO import.labels (wikidata_id, label) SELECT wikidata_id, distinct(jsonb_array_elements_text(labels)) '
+                 'FROM import.wikidata WHERE wikidata_id = %s ON CONFLICT (wikidata_id) DO NOTHING;',
                 (wikidata_id, ))
 
   cursor.execute('INSERT INTO import.instance (wikidata_id, instance_of) '
                  'SELECT wikidata_id, lower(properties->>\'instance of\')::jsonb '
                  'FROM import.wikidata WHERE jsonb_typeof(properties->\'instance of\') = \'array\' AND wikidata_id = %s'
-                 'ON CONFLICT DO UPDATE SET instance_of = lower(EXCLUDED.properties->>\'instance of\')::jsonb;'
+                 'ON CONFLICT (wikidata_id) DO UPDATE SET instance_of = EXCLUDED.instance_of;',
                 (wikidata_id, ))
   cursor.execute('INSERT INTO import.instance (wikidata_id, instance_of) '
                  'SELECT wikidata_id, jsonb_build_array(lower(properties->>\'instance of\')) '
                  'FROM import.wikidata WHERE jsonb_typeof(properties->\'instance of\') = \'string\' AND wikidata_id = %s'
-                 'ON CONFLICT DO UPDATE SET instance_of = jsonb_build_array(lower(EXCLUDED.properties->>\'instance of\'));'
+                 'ON CONFLICT (wikidata_id) DO UPDATE SET instance_of = EXCLUDED.instance_of;',
                 (wikidata_id, ))
   conn.commi()
 
@@ -191,15 +195,14 @@ class WikiXmlHandler(xml.sax.handler.ContentHandler):
         data = json.loads(data)
 
         wikipedia_id, title, labels, sitelinks, description, properties = parse_props(data, self._id_name_map)
-        # print(wikipedia_id, title, qcode, description)
-        # if wikipedia_id:
-          # update_DB(wikipedia_id, title, wikidata_id, labels, sitelinks, description, properties, _db_conn, _db_cursor)
-        # exit()
+        print(wikipedia_id, title, qcode, description)
+        if wikipedia_id:
+            update_DB(wikipedia_id, title, qcode, labels, sitelinks, description, properties, self._db_conn, self._db_cursor)
 
         self._count += 1
-        # if self._count % 100000 == 0:
-          # print(self._count)
-          # self._db_conn.commit()
+        if self._count % 100000 == 0:
+            print(self._count)
+            self._db_conn.commit()
       except mwparserfromhell.parser.ParserError:
         print('mwparser error for:', self._values['title'])
       except ValueError:
