@@ -26,6 +26,7 @@ def setup_db(connection_string):
                  '    labels JSONB,'
                  '    sitelinks JSONB,'
                  '    properties JSONB'
+                 '    CONSTRAINT wd_wikidata_id_unique UNIQUE (wikidata_id) '
                  ');')
   cursor.execute('DROP TABLE IF EXISTS import.id2name;')
   cursor.execute('CREATE TABLE import.id2name ('
@@ -92,6 +93,7 @@ def main(dump, cursor, conn):
      - then store the actual objects with a json property.
      The first step takes quite a bit of memory (5Gb) - could possibly be done using a temporary table in postgres.
   """
+  maxrevid = 0
   id_name_map = {}
   if os.path.isfile('properties.json'):
       print('loading properties from file')
@@ -126,6 +128,8 @@ def main(dump, cursor, conn):
     d = parse_wikidata(line)
     if not d:
         continue
+    lastrevid = int(d.get('lastrevid', 0))
+    maxrevid = max(lastrevid, maxrevid)
     c += 1
     if c % 1000 == 0:
       print(c, rec, dupes)
@@ -184,6 +188,10 @@ def main(dump, cursor, conn):
       rec += 1
       cursor.execute('INSERT INTO import.wikidata (wikipedia_id, title, wikidata_id, labels, sitelinks, description, properties) VALUES (%s, %s, %s, %s, %s, %s, %s)',
               (wikipedia_id, title, wikidata_id, extras.Json(labels), extras.Json(sitelinks), description, extras.Json(properties)))
+
+  # save max rev id as it's going to be used by update script
+  with open('maxrevid.txt', 'w') as f:
+      f.write(str(maxrevid))
 
 
 if __name__ == '__main__':
