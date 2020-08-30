@@ -121,29 +121,29 @@ def parse_props(d, id_name_map):
   return None, None, None, None, None, None
 
 
-def update_DB(wikipedia_id, title, wikidata_id, labels, sitelinks, description, properties, conn, cursor):
-  cursor.execute('INSERT INTO import.wikidata (wikipedia_id, title, wikidata_id, labels, sitelinks, description, properties)'
+def update_DB(wikipedia_id, title, wikidata_id, labels, sitelinks, description, properties, conn, cursor, schema):
+  cursor.execute('INSERT INTO %s.wikidata (wikipedia_id, title, wikidata_id, labels, sitelinks, description, properties)' % shema +
                  'VALUES (%s, %s, %s, %s, %s, %s, %s)'
                  'ON CONFLICT (wikidata_id) DO UPDATE SET title = EXCLUDED.title, labels = EXCLUDED.labels, sitelinks = EXCLUDED.sitelinks,'
                  'description = EXCLUDED.description, properties = EXCLUDED.properties;',
                 (wikipedia_id, title, wikidata_id, extras.Json(labels), extras.Json(sitelinks), description, extras.Json(properties)))
 
-  cursor.execute('INSERT into import.geo (wikidata_id, geometry) '
+  cursor.execute('INSERT into %s.geo (wikidata_id, geometry) ' % schema +
                 'SELECT wikidata_id, ST_SETSRID(ST_MAKEPOINT((properties->\'coordinate location\'->>\'lng\')::DECIMAL, '
                 '(properties->\'coordinate location\'->>\'lat\')::DECIMAL), 4326) AS geometry '
                 'FROM import.wikidata WHERE properties->\'coordinate location\' IS NOT NULL AND wikidata_id = %s '
                 'ON CONFLICT (wikidata_id) DO UPDATE SET geometry = EXCLUDED.geometry;',
                 (wikidata_id, ))
-  cursor.execute('INSERT INTO import.labels (label, wikidata_id) SELECT distinct(jsonb_array_elements_text(labels)), wikidata_id '
+  cursor.execute('INSERT INTO %s.labels (label, wikidata_id) SELECT distinct(jsonb_array_elements_text(labels)), wikidata_id ' % schema +
                  'FROM import.wikidata WHERE wikidata_id = %s ON CONFLICT (wikidata_id, label) DO NOTHING;',
                 (wikidata_id, ))
 
-  cursor.execute('INSERT INTO import.instance (wikidata_id, instance_of) '
+  cursor.execute('INSERT INTO %s.instance (wikidata_id, instance_of) ' % schema +
                  'SELECT wikidata_id, lower(properties->>\'instance of\')::jsonb '
                  'FROM import.wikidata WHERE jsonb_typeof(properties->\'instance of\') = \'array\' AND wikidata_id = %s '
                  'ON CONFLICT (wikidata_id) DO UPDATE SET instance_of = EXCLUDED.instance_of;',
                 (wikidata_id, ))
-  cursor.execute('INSERT INTO import.instance (wikidata_id, instance_of) '
+  cursor.execute('INSERT INTO %s.instance (wikidata_id, instance_of) ' % schema +
                  'SELECT wikidata_id, jsonb_build_array(lower(properties->>\'instance of\')) '
                  'FROM import.wikidata WHERE jsonb_typeof(properties->\'instance of\') = \'string\' AND wikidata_id = %s '
                  'ON CONFLICT (wikidata_id) DO UPDATE SET instance_of = EXCLUDED.instance_of;',
@@ -151,10 +151,11 @@ def update_DB(wikipedia_id, title, wikidata_id, labels, sitelinks, description, 
 
 
 class WikiXmlHandler(xml.sax.handler.ContentHandler):
-  def __init__(self, cursor, conn, id_name_map):
+  def __init__(self, cursor, conn, schema, id_name_map):
     xml.sax.handler.ContentHandler.__init__(self)
     self._db_cursor = cursor
     self._db_conn = conn
+    self._db_schema = schema
     self._id_name_map = id_name_map
     self._count = 0
     self.reset()
@@ -186,7 +187,7 @@ class WikiXmlHandler(xml.sax.handler.ContentHandler):
         wikipedia_id, title, labels, sitelinks, description, properties = parse_props(data, self._id_name_map)
         print(wikipedia_id, title, qcode, description)
         if wikipedia_id:
-            update_DB(wikipedia_id, title, qcode, labels, sitelinks, description, properties, self._db_conn, self._db_cursor)
+            update_DB(wikipedia_id, title, qcode, labels, sitelinks, description, properties, self._db_conn, self._db_cursor, self._db_schema)
 
         self._count += 1
         if self._count % 100000 == 0:
@@ -204,15 +205,21 @@ class WikiXmlHandler(xml.sax.handler.ContentHandler):
       self._buffer.append(content)
 
 
-def parse(dump, cursor, conn):
+def parse(dump, props_dir, cursor, conn, schema):
 
   id_name_map = {}
-  if os.path.isfile('properties.json'):
+  # this file is required for updates
+  # it is created by main WD import script during first time dump import
+  props_path = props_dir + 'properties.json'
+  if os.path.isfile(props_path):
       print('loading properties from file')
-      id_name_map = json.load(open('properties.json'))
+      id_name_map = json.load(open(props_path))
+  else:
+      print('ERROR: properties.json file is missing')
+      exit(-1)
 
   parser = xml.sax.make_parser()
-  xmlHandler = WikiXmlHandler(cursor, conn, id_name_map)
+  xmlHandler = WikiXmlHandler(cursor, conn, schema, id_name_map)
   parser.setContentHandler(xmlHandler)
 
   for line in subprocess.Popen(['bzcat'], stdin=open(dump, 'r'), stdout=subprocess.PIPE).stdout:
@@ -225,6 +232,7 @@ def parse(dump, cursor, conn):
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description='Import wikidata incremental dump into existing postgress DB')
   parser.add_argument('postgres', type=str, help='postgres connection string')
+  parser.add_argument('schema', type=str, help='DB schema containing wikidata tables')
   parser.add_argument('dump', type=str, help='BZipped wikipedia dump')
 
   args = parser.parse_args()
@@ -232,6 +240,6 @@ if __name__ == '__main__':
   conn, cursor = setup_db(args.postgres)
 
   print('Parsing...')
-  parse(args.dump, cursor, conn)
+  parse(args.dump, '', cursor, conn, args.schema)
 
   conn.commit()

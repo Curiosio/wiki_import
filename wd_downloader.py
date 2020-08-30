@@ -19,7 +19,7 @@ sys.path.append(THIS_DIR)
 
 import wd_updater as Updater
 
-MAXREVID = 'maxrevid.txt'
+MAXREVID = '/maxrevid.txt'
 
 BASE_URL = 'https://dumps.wikimedia.org/other/incr/wikidatawiki/'
 STATUS_URL = BASE_URL + '%s/status.txt'
@@ -67,11 +67,11 @@ def update(version, dump_path, conn_str):
 
     file_path = dump_path + DUMP_FILE % version
     conn, cursor = Updater.setup_db(conn_str)
-    Updater.parse(file_path, conn, cursor)
+    Updater.parse(file_path, dump_path, conn, cursor, schema)
     conn.commit()
 
 
-def main(max_days, max_rev_id, dump_path, conn_str):
+def main(max_days, max_rev_id, dump_path, conn_str, schema):
     print('Loading dumps for', max_days, 'days', max_rev_id, dump_path)
 
     day = timedelta(days=1)
@@ -90,7 +90,7 @@ def main(max_days, max_rev_id, dump_path, conn_str):
                 download(date_str, dump_path, conn_str)
 
                 # parse and load dump into DB
-                # update(date_str, dump_path)
+                update(date_str, dump_path, conn_str, schema)
 
                 max_rev_id = rev_id
             else:
@@ -107,17 +107,18 @@ if __name__ == '__main__':
     parser.add_argument('max_days', type=int, help='Max days to load dumps for. Usually not more than 15 are available')
     parser.add_argument('dump_path', type=str, help='Location where to save BZipped wikipedia dumps')
     parser.add_argument('postgres', type=str, help='postgres connection string')
+    parser.add_argument('schema', type=str, help='DB schema containing wikidata tables')
 
     max_rev_id = 0
-    if os.path.isfile(MAXREVID):
-        with open(MAXREVID, 'r') as f:
+    if os.path.isfile(args.dump_path + MAXREVID):
+        with open(args.dump_path + MAXREVID, 'r') as f:
             max_rev_id = int(f.read())
 
     args = parser.parse_args()
 
-    max_rev_id = main(args.max_days, max_rev_id, args.dump_path, args.postgres)
+    max_rev_id = main(args.max_days, max_rev_id, args.dump_path, args.postgres, args.schema)
 
-    with open(MAXREVID, 'w') as f:
+    with open(args.dump_path + MAXREVID, 'w') as f:
         f.write(str(max_rev_id))
 
 
