@@ -93,15 +93,6 @@ def parse_props(d, id_name_map):
   properties['labels'] = d.get('labels')
 
   if wikipedia_id and title and type(d['claims']) == dict:
-    # There are some duplicate wikipedia_id's in there. We could make wikidata_id the primary key
-    # but that doesn't fix the underlying dupe
-    # Properties are mapped in a way where we create lists as values for wiki entities if there is more
-    # than one value. For other types, we always pick one value. If there is a preferred value, we'll
-    # pick that one.
-    # Mostly this does what you want. For filtering on colors for flags it alllows for the query:
-    #   SELECT title FROM wikidata WHERE properties @> '{"color": ["Green", "Red", "White"]}'
-    # However, if you'd want all flags that have Blue in them, you'd have to check for just "Blue"
-    # and also ["Blue"].
     for prop_id, claims in d['claims'].items():
       prop_name = id_name_map.get(prop_id)
       if prop_name:
@@ -134,31 +125,29 @@ def update_DB(wikipedia_id, title, wikidata_id, labels, sitelinks, description, 
   cursor.execute('INSERT INTO import.wikidata (wikipedia_id, title, wikidata_id, labels, sitelinks, description, properties)'
                  'VALUES (%s, %s, %s, %s, %s, %s, %s)'
                  'ON CONFLICT (wikidata_id) DO UPDATE SET title = EXCLUDED.title, labels = EXCLUDED.labels, sitelinks = EXCLUDED.sitelinks,'
-                 'description = EXCLUDED.description, properties = EXCLUDED.properties'
-                 ,
-    (wikipedia_id, title, wikidata_id, extras.Json(labels), extras.Json(sitelinks), description, extras.Json(properties)))
+                 'description = EXCLUDED.description, properties = EXCLUDED.properties;',
+                (wikipedia_id, title, wikidata_id, extras.Json(labels), extras.Json(sitelinks), description, extras.Json(properties)))
 
   cursor.execute('INSERT into import.geo (wikidata_id, geometry) '
                 'SELECT wikidata_id, ST_SETSRID(ST_MAKEPOINT((properties->\'coordinate location\'->>\'lng\')::DECIMAL, '
                 '(properties->\'coordinate location\'->>\'lat\')::DECIMAL), 4326) AS geometry '
-                'FROM import.wikidata WHERE properties->\'coordinate location\' IS NOT NULL AND wikidata_id = %s',
+                'FROM import.wikidata WHERE properties->\'coordinate location\' IS NOT NULL AND wikidata_id = %s '
                 'ON CONFLICT (wikidata_id) DO UPDATE SET geometry = EXCLUDED.geometry;',
                 (wikidata_id, ))
-  cursor.execute('INSERT INTO import.labels (wikidata_id, label) SELECT wikidata_id, distinct(jsonb_array_elements_text(labels)) '
-                 'FROM import.wikidata WHERE wikidata_id = %s ON CONFLICT (wikidata_id) DO NOTHING;',
+  cursor.execute('INSERT INTO import.labels (label, wikidata_id) SELECT distinct(jsonb_array_elements_text(labels)), wikidata_id '
+                 'FROM import.wikidata WHERE wikidata_id = %s ON CONFLICT (wikidata_id, label) DO NOTHING;',
                 (wikidata_id, ))
 
   cursor.execute('INSERT INTO import.instance (wikidata_id, instance_of) '
                  'SELECT wikidata_id, lower(properties->>\'instance of\')::jsonb '
-                 'FROM import.wikidata WHERE jsonb_typeof(properties->\'instance of\') = \'array\' AND wikidata_id = %s'
+                 'FROM import.wikidata WHERE jsonb_typeof(properties->\'instance of\') = \'array\' AND wikidata_id = %s '
                  'ON CONFLICT (wikidata_id) DO UPDATE SET instance_of = EXCLUDED.instance_of;',
                 (wikidata_id, ))
   cursor.execute('INSERT INTO import.instance (wikidata_id, instance_of) '
                  'SELECT wikidata_id, jsonb_build_array(lower(properties->>\'instance of\')) '
-                 'FROM import.wikidata WHERE jsonb_typeof(properties->\'instance of\') = \'string\' AND wikidata_id = %s'
+                 'FROM import.wikidata WHERE jsonb_typeof(properties->\'instance of\') = \'string\' AND wikidata_id = %s '
                  'ON CONFLICT (wikidata_id) DO UPDATE SET instance_of = EXCLUDED.instance_of;',
                 (wikidata_id, ))
-  conn.commi()
 
 
 class WikiXmlHandler(xml.sax.handler.ContentHandler):
@@ -215,12 +204,12 @@ class WikiXmlHandler(xml.sax.handler.ContentHandler):
       self._buffer.append(content)
 
 
-def main(dump, cursor, conn):
+def parse(dump, cursor, conn):
 
   id_name_map = {}
-  # if os.path.isfile('properties.json'):
-  #     print('loading properties from file')
-  #     id_name_map = json.load(open('properties.json'))
+  if os.path.isfile('properties.json'):
+      print('loading properties from file')
+      id_name_map = json.load(open('properties.json'))
 
   parser = xml.sax.make_parser()
   xmlHandler = WikiXmlHandler(cursor, conn, id_name_map)
@@ -243,6 +232,6 @@ if __name__ == '__main__':
   conn, cursor = setup_db(args.postgres)
 
   print('Parsing...')
-  main(args.dump, cursor, conn)
+  parse(args.dump, cursor, conn)
 
   conn.commit()
