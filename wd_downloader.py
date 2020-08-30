@@ -61,7 +61,7 @@ def download(version, dump_path):
         print('File %s already exists, skip downloading' % file_path)
 
 
-def update(version, dump_path, conn_str):
+def update(version, dump_path, conn_str, schema):
     if not conn_str or len(conn_str) == 0:
         return
 
@@ -87,7 +87,7 @@ def main(max_days, max_rev_id, dump_path, conn_str, schema):
             rev_id = int(read_url_resource(MAXREVID_URL % date_str))
             if rev_id > max_rev_id:
                 # download dump
-                download(date_str, dump_path, conn_str)
+                download(date_str, dump_path)
 
                 # parse and load dump into DB
                 update(date_str, dump_path, conn_str, schema)
@@ -109,12 +109,13 @@ if __name__ == '__main__':
     parser.add_argument('postgres', type=str, help='postgres connection string')
     parser.add_argument('schema', type=str, help='DB schema containing wikidata tables')
 
+    args = parser.parse_args()
+
     max_rev_id = 0
     if os.path.isfile(args.dump_path + MAXREVID):
         with open(args.dump_path + MAXREVID, 'r') as f:
             max_rev_id = int(f.read())
 
-    args = parser.parse_args()
 
     max_rev_id = main(args.max_days, max_rev_id, args.dump_path, args.postgres, args.schema)
 

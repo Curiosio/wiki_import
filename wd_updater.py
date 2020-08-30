@@ -122,7 +122,7 @@ def parse_props(d, id_name_map):
 
 
 def update_DB(wikipedia_id, title, wikidata_id, labels, sitelinks, description, properties, conn, cursor, schema):
-  cursor.execute('INSERT INTO %s.wikidata (wikipedia_id, title, wikidata_id, labels, sitelinks, description, properties)' % shema +
+  cursor.execute('INSERT INTO %s.wikidata (wikipedia_id, title, wikidata_id, labels, sitelinks, description, properties)' % schema +
                  'VALUES (%s, %s, %s, %s, %s, %s, %s)'
                  'ON CONFLICT (wikidata_id) DO UPDATE SET title = EXCLUDED.title, labels = EXCLUDED.labels, sitelinks = EXCLUDED.sitelinks,'
                  'description = EXCLUDED.description, properties = EXCLUDED.properties;',
@@ -185,18 +185,19 @@ class WikiXmlHandler(xml.sax.handler.ContentHandler):
         data = json.loads(data)
 
         wikipedia_id, title, labels, sitelinks, description, properties = parse_props(data, self._id_name_map)
-        print(wikipedia_id, title, qcode, description)
+        # print(wikipedia_id, title, qcode, description)
         if wikipedia_id:
             update_DB(wikipedia_id, title, qcode, labels, sitelinks, description, properties, self._db_conn, self._db_cursor, self._db_schema)
 
         self._count += 1
         if self._count % 100000 == 0:
-            print(self._count)
+            print(self._count, qcode)
             self._db_conn.commit()
       except mwparserfromhell.parser.ParserError:
         print('mwparser error for:', self._values['title'])
       except ValueError:
-        print('failed to parse json', qcode)
+        # print('failed to parse json', qcode)
+        pass
       self.reset()
 
 
@@ -205,12 +206,12 @@ class WikiXmlHandler(xml.sax.handler.ContentHandler):
       self._buffer.append(content)
 
 
-def parse(dump, props_dir, cursor, conn, schema):
+def parse(dump, props_dir, conn, cursor, schema):
 
   id_name_map = {}
   # this file is required for updates
   # it is created by main WD import script during first time dump import
-  props_path = props_dir + 'properties.json'
+  props_path = props_dir + '/properties.json'
   if os.path.isfile(props_path):
       print('loading properties from file')
       id_name_map = json.load(open(props_path))
@@ -240,6 +241,6 @@ if __name__ == '__main__':
   conn, cursor = setup_db(args.postgres)
 
   print('Parsing...')
-  parse(args.dump, '', cursor, conn, args.schema)
+  parse(args.dump, '', conn, cursor, args.schema)
 
   conn.commit()
