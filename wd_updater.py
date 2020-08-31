@@ -131,23 +131,28 @@ def update_DB(wikipedia_id, title, wikidata_id, labels, sitelinks, description, 
   cursor.execute('INSERT into %s.geo (wikidata_id, geometry) ' % schema +
                 'SELECT wikidata_id, ST_SETSRID(ST_MAKEPOINT((properties->\'coordinate location\'->>\'lng\')::DECIMAL, '
                 '(properties->\'coordinate location\'->>\'lat\')::DECIMAL), 4326) AS geometry '
-                'FROM import.wikidata WHERE properties->\'coordinate location\' IS NOT NULL AND wikidata_id = %s '
-                'ON CONFLICT (wikidata_id) DO UPDATE SET geometry = EXCLUDED.geometry;',
-                (wikidata_id, ))
+                'FROM %s.wikidata ' % schema +
+                'WHERE properties->\'coordinate location\' IS NOT NULL AND wikidata_id = %s ' % wikidata_id +
+                'ON CONFLICT (wikidata_id) DO UPDATE SET geometry = EXCLUDED.geometry;'
+                )
+
   cursor.execute('INSERT INTO %s.labels (label, wikidata_id) SELECT distinct(jsonb_array_elements_text(labels)), wikidata_id ' % schema +
-                 'FROM import.wikidata WHERE wikidata_id = %s ON CONFLICT (wikidata_id, label) DO NOTHING;',
-                (wikidata_id, ))
+                 'FROM %s.wikidata ' % schema +
+                 'WHERE wikidata_id = %s ON CONFLICT (wikidata_id, label) DO NOTHING;' % wikidata_id
+                )
 
   cursor.execute('INSERT INTO %s.instance (wikidata_id, instance_of) ' % schema +
                  'SELECT wikidata_id, lower(properties->>\'instance of\')::jsonb '
-                 'FROM import.wikidata WHERE jsonb_typeof(properties->\'instance of\') = \'array\' AND wikidata_id = %s '
-                 'ON CONFLICT (wikidata_id) DO UPDATE SET instance_of = EXCLUDED.instance_of;',
-                (wikidata_id, ))
+                 'FROM %s.wikidata ' % schema +
+                 'WHERE jsonb_typeof(properties->\'instance of\') = \'array\' AND wikidata_id = %s ' % wikidata_id +
+                 'ON CONFLICT (wikidata_id) DO UPDATE SET instance_of = EXCLUDED.instance_of;'
+                )
   cursor.execute('INSERT INTO %s.instance (wikidata_id, instance_of) ' % schema +
                  'SELECT wikidata_id, jsonb_build_array(lower(properties->>\'instance of\')) '
-                 'FROM import.wikidata WHERE jsonb_typeof(properties->\'instance of\') = \'string\' AND wikidata_id = %s '
-                 'ON CONFLICT (wikidata_id) DO UPDATE SET instance_of = EXCLUDED.instance_of;',
-                (wikidata_id, ))
+                 'FROM %s.wikidata ' % schema +
+                 'WHERE jsonb_typeof(properties->\'instance of\') = \'string\' AND wikidata_id = %s ' % wikidata_id +
+                 'ON CONFLICT (wikidata_id) DO UPDATE SET instance_of = EXCLUDED.instance_of;'
+                )
 
 
 class WikiXmlHandler(xml.sax.handler.ContentHandler):
