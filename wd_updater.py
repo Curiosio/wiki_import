@@ -30,7 +30,7 @@ def map_value(value, id_name_map):
   value = value['value']
   if typ == 'string':
     return value
-  elif typ == 'wikibase-entityid':
+  elif typ == 'wikibase-entityid' and value.get('id'):
     entitiy_id = value['id']
     return id_name_map.get(entitiy_id)
   elif typ == 'time':
