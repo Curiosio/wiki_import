@@ -48,14 +48,14 @@ def download(version, dump_path):
     # save revision id for the future in case dump have to be reloaded
     file_path = dump_path + MAXREVID_FILE % version
     if not os.path.isfile(file_path):
-        params = ['wget', '-c', '-O', file_path, MAXREVID_URL % version]
+        params = ['wget', '-nv', '-O', file_path, MAXREVID_URL % version]
         call(params)
     else:
         print('File %s already exists, skip downloading' % file_path)
 
     file_path = dump_path + DUMP_FILE % version
     if not os.path.isfile(file_path):
-        params = ['wget', '-c', '-O', file_path, DUMP_URL % (version, version)]
+        params = ['wget', '-nv', '-O', file_path, DUMP_URL % (version, version)]
         call(params)
     else:
         print('File %s already exists, skip downloading' % file_path)
