@@ -124,7 +124,7 @@ def parse_props(d, id_name_map):
 def update_DB(wikipedia_id, title, wikidata_id, labels, sitelinks, description, properties, conn, cursor, schema):
   cursor.execute('INSERT INTO %s.wikidata (wikipedia_id, title, wikidata_id, labels, sitelinks, description, properties)' % schema +
                  'VALUES (%s, %s, %s, %s, %s, %s, %s)'
-                 'ON CONFLICT (wikidata_id) DO UPDATE SET title = EXCLUDED.title, labels = EXCLUDED.labels, sitelinks = EXCLUDED.sitelinks,'
+                 'ON CONFLICT (wikidata_id) DO UPDATE SET wikipedia_id = EXCLUDED.wikipedia_id, title = EXCLUDED.title, labels = EXCLUDED.labels, sitelinks = EXCLUDED.sitelinks,'
                  'description = EXCLUDED.description, properties = EXCLUDED.properties;',
                 (wikipedia_id, title, wikidata_id, extras.Json(labels), extras.Json(sitelinks), description, extras.Json(properties)))
 
