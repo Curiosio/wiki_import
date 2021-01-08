@@ -201,12 +201,12 @@ class WikiXmlHandler(xml.sax.handler.ContentHandler):
 
         self._count += 1
         if self._count % 100000 == 0:
-            print(self._count, qcode)
+            print(self._count, wikidata_id)
             # self._db_conn.commit()
       except mwparserfromhell.parser.ParserError:
         print('mwparser error for:', self._values['title'])
       except ValueError:
-        # print('failed to parse json', qcode)
+        # print('failed to parse json', wikidata_id)
         pass
       self._values = {}
 
