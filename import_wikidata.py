@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 from collections import defaultdict
 
@@ -11,7 +11,9 @@ import re
 import psycopg2
 from psycopg2 import extras
 
-DATE_PARSE_RE = re.compile(r'([-+]?[0-9]+)-([0-9][0-9])-([0-9][0-9])T([0-9][0-9]):([0-9][0-9]):([0-9][0-9])Z?')
+DATE_PARSE_RE = re.compile(
+    r'([-+]?[0-9]+)-([0-9][0-9])-([0-9][0-9])T([0-9][0-9]):([0-9][0-9]):([0-9][0-9])Z?')
+
 
 def setup_db(connection_string):
   conn = psycopg2.connect(connection_string)
@@ -25,7 +27,7 @@ def setup_db(connection_string):
                  '    description TEXT,'
                  '    labels JSONB,'
                  '    sitelinks JSONB,'
-                 '    properties JSONB'
+                 '    properties JSONB, '
                  '    CONSTRAINT wd_wikidata_id_unique UNIQUE (wikidata_id) '
                  ');')
   cursor.execute('DROP TABLE IF EXISTS import.id2name;')
@@ -137,7 +139,8 @@ def main(dump, cursor, conn):
       conn.commit()
 
     labels = [d['labels'][x]['value'] for x in d.get('labels', {})]
-    sitelinks = [d.get('sitelinks')[x]['title'] for x in d.get('sitelinks', {})]
+    sitelinks = [d.get('sitelinks')[x]['title']
+                 for x in d.get('sitelinks', {})]
 
     wikipedia_id = d.get('sitelinks', {}).get('enwiki', {}).get('title')
     title = d['labels'].get('en', {}).get('value')
@@ -184,10 +187,9 @@ def main(dump, cursor, conn):
               properties[prop_name] = value
               break
 
-
       rec += 1
       cursor.execute('INSERT INTO import.wikidata (wikipedia_id, title, wikidata_id, labels, sitelinks, description, properties) VALUES (%s, %s, %s, %s, %s, %s, %s)',
-              (wikipedia_id, title, wikidata_id, extras.Json(labels), extras.Json(sitelinks), description, extras.Json(properties)))
+                     (wikipedia_id, title, wikidata_id, extras.Json(labels), extras.Json(sitelinks), description, extras.Json(properties)))
 
   # save max rev id as it's going to be used by update script
   with open('maxrevid.txt', 'w') as f:
@@ -195,7 +197,8 @@ def main(dump, cursor, conn):
 
 
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser(description='Import wikidata into postgress')
+  parser = argparse.ArgumentParser(
+      description='Import wikidata into postgress')
   parser.add_argument('postgres', type=str,
                       help='postgres connection string')
   parser.add_argument('dump', type=str,
@@ -206,11 +209,14 @@ if __name__ == '__main__':
 
   main(args.dump, cursor, conn)
 
-
-  cursor.execute('CREATE INDEX wd_wikidata_wikidata_id ON import.wikidata(wikidata_id)')
-  cursor.execute('CREATE INDEX wd_wikidata_properties ON import.wikidata USING gin(properties)')
-  cursor.execute('CREATE INDEX wd_wikidata_labels ON import.wikidata USING gin(labels)')
-  cursor.execute('CREATE INDEX wd_wikidata_sitelinks ON import.wikidata USING gin(sitelinks)')
+  cursor.execute(
+      'CREATE INDEX wd_wikidata_wikidata_id ON import.wikidata(wikidata_id)')
+  cursor.execute(
+      'CREATE INDEX wd_wikidata_properties ON import.wikidata USING gin(properties)')
+  cursor.execute(
+      'CREATE INDEX wd_wikidata_labels ON import.wikidata USING gin(labels)')
+  cursor.execute(
+      'CREATE INDEX wd_wikidata_sitelinks ON import.wikidata USING gin(sitelinks)')
   conn.commit()
   cursor.execute('DROP TABLE IF EXISTS import.geo')
   cursor.execute('CREATE TABLE import.geo ('
@@ -219,11 +225,12 @@ if __name__ == '__main__':
                  '    CONSTRAINT wd_geo_unique UNIQUE (wikidata_id)'
                  ')')
   cursor.execute('INSERT into import.geo (wikidata_id, geometry) '
-                'SELECT wikidata_id, ST_SETSRID(ST_MAKEPOINT((properties->\'coordinate location\'->>\'lng\')::DECIMAL, '
-                '(properties->\'coordinate location\'->>\'lat\')::DECIMAL), 4326) AS geometry '
-                'FROM import.wikidata WHERE properties->\'coordinate location\' IS NOT NULL;'
-                )
-  cursor.execute('CREATE INDEX wd_geo_geometry ON import.geo USING gist (geometry) TABLESPACE pg_default;')
+                 'SELECT wikidata_id, ST_SETSRID(ST_MAKEPOINT((properties->\'coordinate location\'->>\'lng\')::DECIMAL, '
+                 '(properties->\'coordinate location\'->>\'lat\')::DECIMAL), 4326) AS geometry '
+                 'FROM import.wikidata WHERE properties->\'coordinate location\' IS NOT NULL;'
+                 )
+  cursor.execute(
+      'CREATE INDEX wd_geo_geometry ON import.geo USING gist (geometry) TABLESPACE pg_default;')
   conn.commit()
   cursor.execute('DROP TABLE IF EXISTS import.labels')
   cursor.execute('CREATE TABLE import.labels ('
@@ -234,7 +241,7 @@ if __name__ == '__main__':
                  )
   cursor.execute('INSERT INTO import.labels (wikidata_id, label) SELECT wikidata_id, jsonb_array_elements_text(labels) '
                  'FROM import.wikidata ON CONFLICT DO NOTHING;'
-                )
+                 )
   cursor.execute('CREATE INDEX wd_wikidata_labels_trgm ON import.labels USING gist (label COLLATE pg_catalog."default" gist_trgm_ops) TABLESPACE pg_default;')
   conn.commit()
 
@@ -252,7 +259,7 @@ if __name__ == '__main__':
   cursor.execute('INSERT INTO import.instance (wikidata_id, instance_of) '
                  'SELECT wikidata_id, jsonb_build_array(lower(properties->>\'instance of\')) '
                  'FROM import.wikidata WHERE jsonb_typeof(properties->\'instance of\') = \'string\';'
-                )
+                 )
   cursor.execute('CREATE INDEX wd_wikidata_instance ON import.instance USING gist (instance_of COLLATE pg_catalog."default" gist_trgm_ops) TABLESPACE pg_default;')
 
   conn.commit()
