@@ -13,7 +13,8 @@ import json
 import os
 
 
-DATE_PARSE_RE = re.compile(r'([-+]?[0-9]+)-([0-9][0-9])-([0-9][0-9])T([0-9][0-9]):([0-9][0-9]):([0-9][0-9])Z?')
+DATE_PARSE_RE = re.compile(
+    r'([-+]?[0-9]+)-([0-9][0-9])-([0-9][0-9])T([0-9][0-9]):([0-9][0-9]):([0-9][0-9])Z?')
 
 
 def setup_db(connection_string):
@@ -77,7 +78,8 @@ def parse_props(d, id_name_map):
   sitelinks = None
   wikipedia_id = None
   try:
-    sitelinks = [d.get('sitelinks')[x]['title'] for x in d.get('sitelinks', {})]
+    sitelinks = [d.get('sitelinks')[x]['title']
+                 for x in d.get('sitelinks', {})]
     wikipedia_id = d.get('sitelinks', {}).get('enwiki', {}).get('title')
   except:
     return None, None, None, None, None, None
@@ -116,7 +118,7 @@ def parse_props(d, id_name_map):
             properties[prop_name] = value
             break
 
-    return wikipedia_id, title, labels, sitelinks, description, properties
+    return wikidata_id, wikipedia_id, title, labels, sitelinks, description, properties
 
   return None, None, None, None, None, None
 
@@ -126,33 +128,33 @@ def update_DB(wikipedia_id, title, wikidata_id, labels, sitelinks, description, 
                  'VALUES (%s, %s, %s, %s, %s, %s, %s)'
                  'ON CONFLICT (wikidata_id) DO UPDATE SET wikipedia_id = EXCLUDED.wikipedia_id, title = EXCLUDED.title, labels = EXCLUDED.labels, sitelinks = EXCLUDED.sitelinks,'
                  'description = EXCLUDED.description, properties = EXCLUDED.properties;',
-                (wikipedia_id, title, wikidata_id, extras.Json(labels), extras.Json(sitelinks), description, extras.Json(properties)))
+                 (wikipedia_id, title, wikidata_id, extras.Json(labels), extras.Json(sitelinks), description, extras.Json(properties)))
 
   cursor.execute('INSERT into %s.geo (wikidata_id, geometry) ' % schema +
-                'SELECT wikidata_id, ST_SETSRID(ST_MAKEPOINT((properties->\'coordinate location\'->>\'lng\')::DECIMAL, '
-                '(properties->\'coordinate location\'->>\'lat\')::DECIMAL), 4326) AS geometry '
-                'FROM %s.wikidata ' % schema +
-                'WHERE properties->\'coordinate location\' IS NOT NULL AND wikidata_id = %s '
-                'ON CONFLICT (wikidata_id) DO UPDATE SET geometry = EXCLUDED.geometry;',
-                (wikidata_id, ))
+                 'SELECT wikidata_id, ST_SETSRID(ST_MAKEPOINT((properties->\'coordinate location\'->>\'lng\')::DECIMAL, '
+                 '(properties->\'coordinate location\'->>\'lat\')::DECIMAL), 4326) AS geometry '
+                 'FROM %s.wikidata ' % schema +
+                 'WHERE properties->\'coordinate location\' IS NOT NULL AND wikidata_id = %s '
+                 'ON CONFLICT (wikidata_id) DO UPDATE SET geometry = EXCLUDED.geometry;',
+                 (wikidata_id, ))
 
   cursor.execute('INSERT INTO %s.labels (label, wikidata_id) SELECT distinct(jsonb_array_elements_text(labels)), wikidata_id ' % schema +
                  'FROM %s.wikidata ' % schema +
                  'WHERE wikidata_id = %s ON CONFLICT (wikidata_id, label) DO NOTHING;',
-                (wikidata_id, ))
+                 (wikidata_id, ))
 
   cursor.execute('INSERT INTO %s.instance (wikidata_id, instance_of) ' % schema +
                  'SELECT wikidata_id, lower(properties->>\'instance of\')::jsonb '
                  'FROM %s.wikidata ' % schema +
                  'WHERE jsonb_typeof(properties->\'instance of\') = \'array\' AND wikidata_id = %s '
                  'ON CONFLICT (wikidata_id) DO UPDATE SET instance_of = EXCLUDED.instance_of;',
-                (wikidata_id, ))
+                 (wikidata_id, ))
   cursor.execute('INSERT INTO %s.instance (wikidata_id, instance_of) ' % schema +
                  'SELECT wikidata_id, jsonb_build_array(lower(properties->>\'instance of\')) '
                  'FROM %s.wikidata ' % schema +
                  'WHERE jsonb_typeof(properties->\'instance of\') = \'string\' AND wikidata_id = %s '
                  'ON CONFLICT (wikidata_id) DO UPDATE SET instance_of = EXCLUDED.instance_of;',
-                (wikidata_id, ))
+                 (wikidata_id, ))
 
 
 class WikiXmlHandler(xml.sax.handler.ContentHandler):
@@ -165,65 +167,58 @@ class WikiXmlHandler(xml.sax.handler.ContentHandler):
     self._count = 0
     self.reset()
 
-
   def reset(self):
     self._buffer = []
     self._state = None
     self._values = {}
 
-
   def startElement(self, name, attrs):
     if name in ('title', 'text', 'id'):
       self._state = name
 
-
   def endElement(self, name):
     if name == self._state:
-      if name not in self._values: self._values[name] = ''.join(self._buffer)
+      if name not in self._values:
+        self._values[name] = ''.join(self._buffer)
       self._state = None
       self._buffer = []
 
-    if name == 'page':
+    if name == 'revision':
       try:
-        qcode = self._values['title']
         data = self._values['text']
         data = json.loads(data)
 
-        wikipedia_id, title, labels, sitelinks, description, properties = parse_props(data, self._id_name_map)
-        # print(wikipedia_id, title, qcode, description)
+        wikidata_id, wikipedia_id, title, labels, sitelinks, description, properties = parse_props(
+            data, self._id_name_map)
+        # print(wikipedia_id, title, wikidata_id, description)
         if wikipedia_id:
-            update_DB(wikipedia_id, title, qcode, labels, sitelinks, description, properties, self._db_conn, self._db_cursor, self._db_schema)
+            update_DB(wikipedia_id, title, wikidata_id, labels, sitelinks, description,
+                      properties, self._db_conn, self._db_cursor, self._db_schema)
+        else:
+            # sometimes records get removed/merged
+            delete_one(wikidata_id, self._db_conn,
+                       self._db_cursor, self._db_schema)
 
         self._count += 1
         if self._count % 100000 == 0:
             print(self._count, qcode)
-            self._db_conn.commit()
+            # self._db_conn.commit()
       except mwparserfromhell.parser.ParserError:
         print('mwparser error for:', self._values['title'])
       except ValueError:
         # print('failed to parse json', qcode)
         pass
-      self.reset()
+      self._values = {}
 
+    if name == 'page':
+      self.reset()
 
   def characters(self, content):
     if self._state:
       self._buffer.append(content)
 
 
-def parse(dump, props_dir, conn, cursor, schema):
-
-  id_name_map = {}
-  # this file is required for updates
-  # it is created by main WD import script during first time dump import
-  props_path = props_dir + '/properties.json'
-  if os.path.isfile(props_path):
-      print('loading properties from file')
-      id_name_map = json.load(open(props_path))
-  else:
-      print('ERROR: properties.json file is missing')
-      exit(-1)
-
+def parse(dump, id_name_map, conn, cursor, schema):
   parser = xml.sax.make_parser()
   xmlHandler = WikiXmlHandler(cursor, conn, schema, id_name_map)
   parser.setContentHandler(xmlHandler)
@@ -236,16 +231,29 @@ def parse(dump, props_dir, conn, cursor, schema):
 
 
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser(description='Import wikidata incremental dump into existing postgress DB')
+  parser = argparse.ArgumentParser(
+      description='Import wikidata incremental dump into existing postgress DB')
   parser.add_argument('postgres', type=str, help='postgres connection string')
-  parser.add_argument('schema', type=str, help='DB schema containing wikidata tables')
+  parser.add_argument('schema', type=str,
+                      help='DB schema containing wikidata tables')
   parser.add_argument('dump', type=str, help='BZipped wikipedia dump')
+
+  id_name_map = {}
+  # this file is required for updates
+  # it is created by main WD import script during first time dump import
+  props_path = './properties.json'
+  if os.path.isfile(props_path):
+      print('loading properties from file')
+      id_name_map = json.load(open(props_path))
+  else:
+      print('ERROR: properties.json file is missing')
+      exit(-1)
 
   args = parser.parse_args()
   print('Setup db')
   conn, cursor = setup_db(args.postgres)
 
   print('Parsing...')
-  parse(args.dump, '', conn, cursor, args.schema)
+  parse(args.dump, id_name_map, conn, cursor, args.schema)
 
   conn.commit()
