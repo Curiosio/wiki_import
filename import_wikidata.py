@@ -213,6 +213,18 @@ if __name__ == '__main__':
       'CREATE INDEX wd_wikidata_wikidata_id ON import.wikidata(wikidata_id)')
   cursor.execute(
       'CREATE INDEX wd_wikidata_properties ON import.wikidata USING gin(properties)')
+  cursor.execute('''CREATE INDEX wd_wikidata_properties_located_admin_btree
+                    ON wd.wikidata USING btree
+                    ((properties ->> 'located in the administrative territorial entity'::text)
+                    COLLATE pg_catalog."default" ASC NULLS LAST) TABLESPACE pg_default;''')
+  cursor.execute('''CREATE INDEX wd_wikidata_properties_located_admin_gin
+                    ON wd.wikidata USING gin
+                    ((properties -> 'located in the administrative territorial entity'::text))
+                    TABLESPACE pg_default;''')
+  cursor.execute('''CREATE INDEX wd_wikidata_wikipedia_id
+                    ON wd.wikidata USING btree
+                    (wikipedia_id COLLATE pg_catalog."default" ASC NULLS LAST)
+                    TABLESPACE pg_default;''')
   cursor.execute(
       'CREATE INDEX wd_wikidata_labels ON import.wikidata USING gin(labels)')
   cursor.execute(
