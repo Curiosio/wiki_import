@@ -140,5 +140,4 @@ if __name__ == '__main__':
 
     max_rev_id = read_revid(args.dump_path)
 
-    max_rev_id = main(args.max_days, max_rev_id, args.dump_path, args.postgres, args.schema)
-    write_revid(args.dump_path)
+    main(args.max_days, max_rev_id, args.dump_path, args.postgres, args.schema)
