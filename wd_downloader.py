@@ -1,6 +1,5 @@
 #!/bin/python3
 
-import wd_updater as Updater
 import argparse
 import sys
 import json
@@ -19,7 +18,7 @@ if not THIS_DIR:
 if not THIS_DIR.endswith('/'):
     THIS_DIR = THIS_DIR + '/'
 sys.path.append(THIS_DIR)
-
+import wd_updater as Updater
 
 PROPS_FILE = '/properties.json'
 MAXREVID = '/maxrevid.txt'
@@ -108,6 +107,7 @@ def main(max_days, max_rev_id, dump_path, conn_str, schema):
                 update(date_str, dump_path, conn_str, schema, id_name_map)
 
                 max_rev_id = rev_id
+                write_revid(dump_path, rev_id)
             else:
                 print('Skip %s dump as DB already contains that revision' % date_str)
 
@@ -116,27 +116,29 @@ def main(max_days, max_rev_id, dump_path, conn_str, schema):
     return max_rev_id
 
 
+def read_revid(path):
+    rev_id = 0
+    if os.path.isfile(path + MAXREVID):
+        with open(path + MAXREVID, 'r') as f:
+            rev_id = int(f.read())
+    return rev_id
+
+
+def write_revid(path, rev_id):
+    with open(path + MAXREVID, 'w') as f:
+        f.write(str(rev_id))
+
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(
-        description='Download wikidata incremental dump into specfied location')
-    parser.add_argument(
-        'max_days', type=int, help='Max days to load dumps for. Usually not more than 15 are available')
-    parser.add_argument('dump_path', type=str,
-                        help='Location where to save BZipped wikipedia dumps')
-    parser.add_argument('postgres', type=str,
-                        help='postgres connection string')
-    parser.add_argument('schema', type=str,
-                        help='DB schema containing wikidata tables')
+    parser = argparse.ArgumentParser(description='Download wikidata incremental dump into specfied location')
+    parser.add_argument('max_days', type=int, help='Max days to load dumps for. Usually not more than 15 are available')
+    parser.add_argument('dump_path', type=str, help='Location where to save BZipped wikipedia dumps')
+    parser.add_argument('postgres', type=str, help='postgres connection string')
+    parser.add_argument('schema', type=str, help='DB schema containing wikidata tables')
 
     args = parser.parse_args()
 
-    max_rev_id = 0
-    if os.path.isfile(args.dump_path + MAXREVID):
-        with open(args.dump_path + MAXREVID, 'r') as f:
-            max_rev_id = int(f.read())
+    max_rev_id = read_revid(args.dump_path)
 
-    max_rev_id = main(args.max_days, max_rev_id,
-                      args.dump_path, args.postgres, args.schema)
-
-    with open(args.dump_path + MAXREVID, 'w') as f:
-        f.write(str(max_rev_id))
+    max_rev_id = main(args.max_days, max_rev_id, args.dump_path, args.postgres, args.schema)
+    write_revid(args.dump_path)
