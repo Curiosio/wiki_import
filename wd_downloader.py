@@ -43,7 +43,7 @@ def read_url_resource(url):
     except URLError as err:
         pass
     except UnicodeEncodeError as err:
-        print(url, '- ERROR', err, file=sys.stderr)
+        print(url, '- ERROR', err, file=sys.stderr, flush=True)
     return result
 
 
@@ -54,15 +54,14 @@ def download(version, dump_path):
         params = ['wget', '-nv', '-O', file_path, MAXREVID_URL % version]
         call(params)
     else:
-        print('File %s already exists, skip downloading' % file_path)
+        print('File %s already exists, skip downloading' % file_path, flush=True)
 
     file_path = dump_path + DUMP_FILE % version
     if not os.path.isfile(file_path):
-        params = ['wget', '-nv', '-O', file_path,
-                  DUMP_URL % (version, version)]
+        params = ['wget', '-nv', '-O', file_path, DUMP_URL % (version, version)]
         call(params)
     else:
-        print('File %s already exists, skip downloading' % file_path)
+        print('File %s already exists, skip downloading' % file_path, flush=True)
 
 
 def update(version, dump_path, conn_str, schema, id_name_map):
@@ -81,12 +80,12 @@ def main(max_days, max_rev_id, dump_path, conn_str, schema):
     # it is created by main WD import script during first time dump import
     props_path = dump_path + PROPS_FILE
     if os.path.isfile(props_path):
-        print('loading properties from file')
+        print('loading properties from file', flush=True)
         id_name_map = json.load(open(props_path))
     else:
-        print('ERROR: properties.json file is missing')
+        print('ERROR: properties.json file is missing', flush=True)
         exit(-1)
-    print('Loading dumps for', max_days, 'days', max_rev_id, dump_path)
+    print('Loading dumps for', max_days, 'days', max_rev_id, dump_path, flush=True)
 
     day = timedelta(days=1)
     start_date = date.today() - timedelta(days=max_days)
@@ -109,7 +108,7 @@ def main(max_days, max_rev_id, dump_path, conn_str, schema):
                 max_rev_id = rev_id
                 write_revid(dump_path, rev_id)
             else:
-                print('Skip %s dump as DB already contains that revision' % date_str)
+                print('Skip %s dump as DB already contains that revision' % date_str, flush=True)
 
         start_date += day
 

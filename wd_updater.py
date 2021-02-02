@@ -13,8 +13,7 @@ import json
 import os
 
 
-DATE_PARSE_RE = re.compile(
-    r'([-+]?[0-9]+)-([0-9][0-9])-([0-9][0-9])T([0-9][0-9]):([0-9][0-9]):([0-9][0-9])Z?')
+DATE_PARSE_RE = re.compile(r'([-+]?[0-9]+)-([0-9][0-9])-([0-9][0-9])T([0-9][0-9]):([0-9][0-9]):([0-9][0-9])Z?')
 
 
 def setup_db(connection_string):
@@ -78,8 +77,7 @@ def parse_props(d, id_name_map):
   sitelinks = None
   wikipedia_id = None
   try:
-    sitelinks = [d.get('sitelinks')[x]['title']
-                 for x in d.get('sitelinks', {})]
+    sitelinks = [d.get('sitelinks')[x]['title'] for x in d.get('sitelinks', {})]
     wikipedia_id = d.get('sitelinks', {}).get('enwiki', {}).get('title')
   except:
     return None, None, None, None, None, None
@@ -196,15 +194,14 @@ class WikiXmlHandler(xml.sax.handler.ContentHandler):
                       properties, self._db_conn, self._db_cursor, self._db_schema)
         else:
             # sometimes records get removed/merged
-            delete_one(wikidata_id, self._db_conn,
-                       self._db_cursor, self._db_schema)
+            delete_one(wikidata_id, self._db_conn, self._db_cursor, self._db_schema)
 
         self._count += 1
-        if self._count % 100000 == 0:
-            print(self._count, wikidata_id)
-            # self._db_conn.commit()
+        if self._count % 1000 == 0:
+            print(self._count, wikidata_id, flush=True)
+            self._db_conn.commit()
       except mwparserfromhell.parser.ParserError:
-        print('mwparser error for:', self._values['title'])
+        print('mwparser error for:', self._values['title'], flush=True)
       except ValueError:
         # print('failed to parse json', wikidata_id)
         pass
@@ -231,11 +228,9 @@ def parse(dump, id_name_map, conn, cursor, schema):
 
 
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser(
-      description='Import wikidata incremental dump into existing postgress DB')
+  parser = argparse.ArgumentParser(description='Import wikidata incremental dump into existing postgress DB')
   parser.add_argument('postgres', type=str, help='postgres connection string')
-  parser.add_argument('schema', type=str,
-                      help='DB schema containing wikidata tables')
+  parser.add_argument('schema', type=str, help='DB schema containing wikidata tables')
   parser.add_argument('dump', type=str, help='BZipped wikipedia dump')
 
   id_name_map = {}
@@ -243,17 +238,17 @@ if __name__ == '__main__':
   # it is created by main WD import script during first time dump import
   props_path = './properties.json'
   if os.path.isfile(props_path):
-      print('loading properties from file')
+      print('loading properties from file', flush=True)
       id_name_map = json.load(open(props_path))
   else:
-      print('ERROR: properties.json file is missing')
+      print('ERROR: properties.json file is missing', flush=True)
       exit(-1)
 
   args = parser.parse_args()
-  print('Setup db')
+  print('Setup db', flush=True)
   conn, cursor = setup_db(args.postgres)
 
-  print('Parsing...')
+  print('Parsing...', flush=True)
   parse(args.dump, id_name_map, conn, cursor, args.schema)
 
   conn.commit()
