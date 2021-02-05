@@ -103,13 +103,13 @@ def main(max_days, max_rev_id, dump_path, conn_str, schema):
         # check dump status (if it exists and is ready)
         date_str = start_date.strftime('%Y%m%d')
 
-        # check if this dump has any updates
-        rev_id_str = download_revid(date_str, dump_path)
-        rev_id = int(rev_id_str)
-        if rev_id > max_rev_id:
-            # check if dump is ready to use
-            status = download_status(date_str, dump_path)
-            if status == STATUS_DONE:
+        # check if dump is ready to use
+        status = download_status(date_str, dump_path)
+        if status == STATUS_DONE:
+            # check if this dump has any updates
+            rev_id_str = download_revid(date_str, dump_path)
+            rev_id = int(rev_id_str)
+            if rev_id > max_rev_id:
                 # download dump
                 download(date_str, dump_path)
 
@@ -119,9 +119,9 @@ def main(max_days, max_rev_id, dump_path, conn_str, schema):
                 max_rev_id = rev_id
                 write_revid(dump_path, rev_id)
             else:
-                print('Skip %s dump as dumping process is not done yet, status: %s' % (date_str, status), flush=True)
+                print('Skip %s dump as DB already contains that revision' % date_str, flush=True)
         else:
-            print('Skip %s dump as DB already contains that revision' % date_str, flush=True)
+            print('Skip %s dump as dumping process is not done yet, status: %s' % (date_str, status), flush=True)
 
         start_date += day
 
