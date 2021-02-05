@@ -9,8 +9,7 @@ from datetime import date
 from datetime import timedelta
 
 from subprocess import call
-from urllib.request import urlopen
-from urllib.error import URLError
+
 
 THIS_DIR = os.path.abspath(os.path.dirname(__file__))
 if not THIS_DIR:
@@ -19,6 +18,7 @@ if not THIS_DIR.endswith('/'):
     THIS_DIR = THIS_DIR + '/'
 sys.path.append(THIS_DIR)
 import wd_updater as Updater
+
 
 PROPS_FILE = '/properties.json'
 MAXREVID = '/maxrevid.txt'
@@ -29,33 +29,41 @@ MAXREVID_URL = BASE_URL + '%s/maxrevid.txt'
 DUMP_URL = BASE_URL + '%s/wikidatawiki-%s-pages-meta-hist-incr.xml.bz2'
 
 MAXREVID_FILE = '/wikidatawiki-%s-maxrevid.txt'
+STATUS_FILE = '/wikidatawiki-%s-status.txt'
 DUMP_FILE = '/wikidatawiki-%s-pages-meta-hist-incr.xml.bz2'
 
 STATUS_DONE = 'done:all'
 
 
-def read_url_resource(url):
-    result = ''
-    try:
-        response = urlopen(url)
-        response_content = response.read()
-        result = response_content.decode('utf-8')
-    except URLError as err:
-        pass
-    except UnicodeEncodeError as err:
-        print(url, '- ERROR', err, file=sys.stderr, flush=True)
-    return result
+def download_status(version, dump_path):
+    # save revision id for the future in case dump have to be reloaded
+    file_path = dump_path + STATUS_FILE % version
+    params = ['wget', '-nv', '-O', file_path, STATUS_URL % version]
+    call(params)
+
+    status = ''
+    with open(file_path, 'r') as f:
+        status = f.read()
+
+    return status.strip()
 
 
-def download(version, dump_path):
+def download_revid(version, dump_path):
     # save revision id for the future in case dump have to be reloaded
     file_path = dump_path + MAXREVID_FILE % version
     if not os.path.isfile(file_path):
-        params = ['wget', '-nv', '-O', file_path, MAXREVID_URL % version]
         call(params)
     else:
         print('File %s already exists, skip downloading' % file_path, flush=True)
 
+    rev_id = ''
+    with open(file_path, 'r') as f:
+        rev_id = f.read()
+
+    return rev_id
+
+
+def download(version, dump_path):
     file_path = dump_path + DUMP_FILE % version
     if not os.path.isfile(file_path):
         params = ['wget', '-nv', '-O', file_path, DUMP_URL % (version, version)]
@@ -94,11 +102,13 @@ def main(max_days, max_rev_id, dump_path, conn_str, schema):
         # check dump status (if it exists and is ready)
         date_str = start_date.strftime('%Y%m%d')
 
-        status = read_url_resource(STATUS_URL % date_str)
-        if status.strip() == STATUS_DONE:
-            # check if this dump has any updates
-            rev_id = int(read_url_resource(MAXREVID_URL % date_str))
-            if rev_id > max_rev_id:
+        # check if this dump has any updates
+        rev_id_str = download_revid(date_str, dump_path)
+        rev_id = int(rev_id_str)
+        if rev_id > max_rev_id:
+            # check if dump is ready to use
+            status = download_status(date_str, dump_path)
+            if status == STATUS_DONE:
                 # download dump
                 download(date_str, dump_path)
 
@@ -108,7 +118,9 @@ def main(max_days, max_rev_id, dump_path, conn_str, schema):
                 max_rev_id = rev_id
                 write_revid(dump_path, rev_id)
             else:
-                print('Skip %s dump as DB already contains that revision' % date_str, flush=True)
+                print('Skip %s dump as dumping process is not done yet, status: %s' % (date_str, status), flush=True)
+        else:
+            print('Skip %s dump as DB already contains that revision' % date_str, flush=True)
 
         start_date += day
 
